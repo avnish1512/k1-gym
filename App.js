@@ -31,6 +31,8 @@ const CLOUD_SYNC_WORKSPACE_ID = process.env.EXPO_PUBLIC_SYNC_WORKSPACE_ID || 'k1
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
 const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
 const CLOUD_SYNC_CONFIGURED = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
+const ONLINE_SYNC_SETUP_MESSAGE = 'Add Supabase URL and anon key env vars, then redeploy.';
+const ONLINE_SYNC_SETUP_ERROR = 'Online sync not configured';
 const APP_DATA_VERSION = 2;
 
 const THEMES = {
@@ -289,11 +291,11 @@ export default function App() {
   const appStateRef = useRef(null);
   const [syncStatus, setSyncStatus] = useState({
     live: false,
-    mode: CLOUD_SYNC_CONFIGURED ? 'cloud' : 'local',
+    mode: 'cloud',
     cloudReady: false,
     lastSyncedAt: null,
-    message: CLOUD_SYNC_CONFIGURED ? 'Connecting cloud sync' : 'Loading local workspace',
-    error: null
+    message: CLOUD_SYNC_CONFIGURED ? 'Connecting online sync' : ONLINE_SYNC_SETUP_MESSAGE,
+    error: CLOUD_SYNC_CONFIGURED ? null : ONLINE_SYNC_SETUP_ERROR
   });
 
   // --- FORM FIELD STATES ---
@@ -363,7 +365,7 @@ export default function App() {
     }
   };
 
-  const pushStateToCloud = async (state, message = 'Saved to cloud') => {
+  const pushStateToCloud = async (state, message = 'Saved online') => {
     const cloudClient = cloudSyncClientRef.current;
     if (!CLOUD_SYNC_CONFIGURED || !cloudClient) {
       return { ok: false, skipped: true };
@@ -401,7 +403,7 @@ export default function App() {
         live: false,
         mode: 'cloud',
         cloudReady: false,
-        error: 'Cloud save failed'
+        error: 'Online save failed'
       }));
       return { ok: false, error: e };
     }
@@ -423,18 +425,31 @@ export default function App() {
     return { ok: true, data };
   };
 
-  const persistState = async (state, { broadcast = true, cloud = true, message = 'Saved locally' } = {}) => {
+  const persistState = async (state, { broadcast = true, cloud = true, message = 'Saved to device cache' } = {}) => {
     try {
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-      if (broadcast) publishStateToPeers(state);
-      setSyncStatus(prev => ({
-        live: true,
-        mode: CLOUD_SYNC_CONFIGURED ? 'cloud' : 'local',
-        cloudReady: CLOUD_SYNC_CONFIGURED ? prev.cloudReady : false,
-        lastSyncedAt: new Date().toISOString(),
-        message,
-        error: null
-      }));
+      if (broadcast && CLOUD_SYNC_CONFIGURED) publishStateToPeers(state);
+      setSyncStatus(prev => {
+        if (!CLOUD_SYNC_CONFIGURED) {
+          return {
+            live: false,
+            mode: 'cloud',
+            cloudReady: false,
+            lastSyncedAt: prev.lastSyncedAt,
+            message: ONLINE_SYNC_SETUP_MESSAGE,
+            error: ONLINE_SYNC_SETUP_ERROR
+          };
+        }
+
+        return {
+          live: true,
+          mode: 'cloud',
+          cloudReady: prev.cloudReady,
+          lastSyncedAt: new Date().toISOString(),
+          message,
+          error: null
+        };
+      });
       if (cloud) {
         await pushStateToCloud(state, message);
       }
@@ -458,7 +473,7 @@ export default function App() {
     await persistState(normalized, { broadcast: true, cloud: false, message });
   };
 
-  const syncCloudWorkspace = async (localState, message = 'Cloud sync checked') => {
+  const syncCloudWorkspace = async (localState, message = 'Online sync checked') => {
     if (!CLOUD_SYNC_CONFIGURED) return;
 
     try {
@@ -470,17 +485,17 @@ export default function App() {
       const localRevision = Number(localState?.meta?.revision) || 0;
 
       if (!cloudState) {
-        await pushStateToCloud(localState || appStateRef.current || createStarterState(), 'Cloud workspace created');
+        await pushStateToCloud(localState || appStateRef.current || createStarterState(), 'Online workspace created');
         return;
       }
 
       if (cloudRevision > lastRevisionRef.current) {
-        await applyIncomingState(cloudState, 'Synced latest cloud changes');
+        await applyIncomingState(cloudState, 'Synced latest online changes');
         return;
       }
 
       if (localState && localRevision > cloudRevision) {
-        await pushStateToCloud(localState, 'Uploaded local changes to cloud');
+        await pushStateToCloud(localState, 'Uploaded device cache to online sync');
         return;
       }
 
@@ -499,7 +514,7 @@ export default function App() {
         live: false,
         mode: 'cloud',
         cloudReady: false,
-        error: 'Cloud sync failed'
+        error: 'Online sync failed'
       }));
     }
   };
@@ -552,7 +567,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (Platform.OS !== 'web' || typeof window === 'undefined') return undefined;
+    if (!CLOUD_SYNC_CONFIGURED || Platform.OS !== 'web' || typeof window === 'undefined') return undefined;
 
     const handlePayload = (payload, message) => {
       if (!payload || payload.sourceId === clientIdRef.current || !payload.state) return;
@@ -610,7 +625,7 @@ export default function App() {
             live: true,
             mode: 'cloud',
             cloudReady: true,
-            message: prev.message === 'Connecting cloud sync' ? 'Cloud realtime connected' : prev.message,
+            message: prev.message === 'Connecting online sync' ? 'Online realtime connected' : prev.message,
             error: null
           }));
         }
@@ -621,13 +636,13 @@ export default function App() {
             live: false,
             mode: 'cloud',
             cloudReady: false,
-            error: 'Cloud realtime disconnected'
+            error: 'Online realtime disconnected'
           }));
         }
       });
 
     const pullCloudChanges = () => {
-      syncCloudWorkspace(appStateRef.current, 'Checked cloud sync');
+      syncCloudWorkspace(appStateRef.current, 'Checked online sync');
     };
 
     const intervalId = setInterval(pullCloudChanges, 30000);
@@ -1184,14 +1199,17 @@ export default function App() {
   // --- RENDER PARTS ---
   const renderSyncStatus = (compact = false) => {
     const lastSavedAt = syncStatus.lastSyncedAt || appState.meta?.updatedAt;
-    const statusLabel = syncStatus.error
+    const onlineSetupRequired = !CLOUD_SYNC_CONFIGURED;
+    const statusLabel = onlineSetupRequired
+      ? 'Online setup'
+      : syncStatus.error
       ? 'Sync issue'
       : syncStatus.mode === 'cloud' && syncStatus.cloudReady
-        ? 'Cloud sync'
-        : syncStatus.mode === 'cloud'
-          ? 'Cloud setup'
-          : 'Local sync';
-    const statusMeta = syncStatus.error || `${syncStatus.message} - ${formatRelativeSyncTime(lastSavedAt)}`;
+        ? 'Online sync'
+        : 'Connecting';
+    const statusMeta = onlineSetupRequired
+      ? ONLINE_SYNC_SETUP_MESSAGE
+      : syncStatus.error || `${syncStatus.message} - ${formatRelativeSyncTime(lastSavedAt)}`;
 
     return (
       <View style={[styles.syncStatus, compact && styles.syncStatusCompact]}>
@@ -1728,9 +1746,9 @@ export default function App() {
             <View style={styles.syncInfoItem}>
               <Text style={styles.bodyItemLabel}>Mode</Text>
               <Text style={styles.bodyItemVal}>
-                {syncStatus.mode === 'cloud'
-                  ? (syncStatus.cloudReady ? 'Cloud realtime sync' : 'Cloud sync pending')
-                  : 'Local-only sync'}
+                {!CLOUD_SYNC_CONFIGURED
+                  ? 'Online setup needed'
+                  : (syncStatus.cloudReady ? 'Online realtime sync' : 'Online sync pending')}
               </Text>
             </View>
             <View style={styles.syncInfoItem}>
@@ -1739,7 +1757,11 @@ export default function App() {
             </View>
             <View style={styles.syncInfoItem}>
               <Text style={styles.bodyItemLabel}>Last Saved</Text>
-              <Text style={styles.bodyItemVal}>{formatRelativeSyncTime(syncStatus.lastSyncedAt || appState.meta?.updatedAt)}</Text>
+              <Text style={styles.bodyItemVal}>
+                {CLOUD_SYNC_CONFIGURED
+                  ? formatRelativeSyncTime(syncStatus.lastSyncedAt || appState.meta?.updatedAt)
+                  : 'Not online yet'}
+              </Text>
             </View>
           </View>
         </View>

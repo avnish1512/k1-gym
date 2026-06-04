@@ -18,9 +18,10 @@ Current result:
 
 ## Real-Time Mode
 
-The app now supports two sync modes:
-- Cloud sync through Supabase when `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY` are configured.
-- Local-only sync across open tabs/windows when cloud sync is not configured.
+The app is online-sync first:
+- Online sync runs through Supabase when `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY` are configured.
+- Browser storage is used only as a same-device cache.
+- If Supabase env vars are missing, the app shows `Online setup needed` instead of pretending local storage is synced.
 
 Saved data is versioned with a revision and last-saved timestamp. Overdue memberships refresh automatically while the app is open and when a tab becomes active.
 
@@ -62,12 +63,20 @@ with check (true);
 
 Enable realtime for `public.gym_workspaces` in Supabase Dashboard > Database > Replication.
 
-Set these EAS environment variables:
+Set these build/runtime environment variables in every host that builds the app:
 
 ```bash
 eas env:create --environment production --name EXPO_PUBLIC_SUPABASE_URL --value "https://your-project.supabase.co" --visibility plain
 eas env:create --environment production --name EXPO_PUBLIC_SUPABASE_ANON_KEY --value "your_supabase_anon_key_here" --visibility plain
 eas env:create --environment production --name EXPO_PUBLIC_SYNC_WORKSPACE_ID --value "k1-gym-main" --visibility plain
+```
+
+For GitHub Actions, add repository secrets with the same names:
+
+```text
+EXPO_PUBLIC_SUPABASE_URL
+EXPO_PUBLIC_SUPABASE_ANON_KEY
+EXPO_PUBLIC_SYNC_WORKSPACE_ID
 ```
 
 Redeploy after the variables are set:
@@ -115,6 +124,9 @@ http://127.0.0.1:3000
 4. Add environment variables:
    - `NODE_ENV=production`
    - `EXPO_PUBLIC_APP_ENV=production`
+   - `EXPO_PUBLIC_SUPABASE_URL`
+   - `EXPO_PUBLIC_SUPABASE_ANON_KEY`
+   - `EXPO_PUBLIC_SYNC_WORKSPACE_ID=k1-gym-main`
 5. Deploy.
 
 `vercel.json` already includes SPA rewrites, immutable asset caching, app-shell no-cache behavior, and security headers.
@@ -130,6 +142,9 @@ http://127.0.0.1:3000
 4. Add environment variables:
    - `NODE_ENV=production`
    - `EXPO_PUBLIC_APP_ENV=production`
+   - `EXPO_PUBLIC_SUPABASE_URL`
+   - `EXPO_PUBLIC_SUPABASE_ANON_KEY`
+   - `EXPO_PUBLIC_SYNC_WORKSPACE_ID=k1-gym-main`
 5. Deploy.
 
 `netlify.toml` already includes SPA fallback, immutable asset caching, app-shell no-cache behavior, and security headers.
@@ -139,6 +154,9 @@ http://127.0.0.1:3000
 The GitHub Actions workflow builds the Expo web export on pushes and pull requests using Node 20. Configure these repository secrets if you want automated hosting deploys:
 
 ```text
+EXPO_PUBLIC_SUPABASE_URL
+EXPO_PUBLIC_SUPABASE_ANON_KEY
+EXPO_PUBLIC_SYNC_WORKSPACE_ID
 VERCEL_TOKEN
 VERCEL_ORG_ID
 VERCEL_PROJECT_ID
@@ -149,8 +167,8 @@ NETLIFY_SITE_ID
 ## Pre-Launch Checklist
 
 - Replace starter members/plans with real gym data.
-- Confirm the gym owner understands that browser storage is local to each device.
-- Add a cloud backend and login before using the app across multiple staff devices.
+- Confirm Supabase env vars are present in the active hosting provider before adding real member data.
+- Add login before using the app across multiple staff devices with sensitive customer data.
 - Configure a custom domain and HTTPS on the host.
 - Test add member, edit member, renew membership, delete member, and restore starter data on the deployed URL.
 - Export or back up data before wiping browser storage.
