@@ -19,63 +19,50 @@ Current result:
 ## Real-Time Mode
 
 The app is online-sync first:
-- Online sync runs through Supabase when `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY` are configured.
+- Online sync runs through Firebase Realtime Database when `EXPO_PUBLIC_FIREBASE_DATABASE_URL` is configured.
 - Browser storage is used only as a same-device cache.
-- If Supabase env vars are missing, the app shows `Online setup needed` instead of pretending local storage is synced.
+- If Firebase env vars are missing, the app shows `Online setup needed` instead of pretending local storage is synced.
 
 Saved data is versioned with a revision and last-saved timestamp. Overdue memberships refresh automatically while the app is open and when a tab becomes active.
 
-Important: cross-device deletes/updates require Supabase. Add authentication, backups, and role-based access before treating this as the only production record system for customer phone numbers.
+Important: cross-device deletes/updates require Firebase. Add authentication, backups, and role-based access before treating this as the only production record system for customer phone numbers.
 
-## Supabase Cross-Device Sync
+## Firebase Cross-Device Sync
 
-Create this table in Supabase SQL Editor:
+Create a Firebase project, then create a Realtime Database. Copy the database URL, which looks like this:
 
-```sql
-create table if not exists public.gym_workspaces (
-  id text primary key,
-  state jsonb not null,
-  revision bigint not null default 1,
-  updated_at timestamptz not null default now()
-);
-
-alter table public.gym_workspaces enable row level security;
-
-create policy "temporary gym workspace read"
-on public.gym_workspaces
-for select
-to anon
-using (true);
-
-create policy "temporary gym workspace write"
-on public.gym_workspaces
-for insert
-to anon
-with check (true);
-
-create policy "temporary gym workspace update"
-on public.gym_workspaces
-for update
-to anon
-using (true)
-with check (true);
+```text
+https://your-project-default-rtdb.firebaseio.com
 ```
 
-Enable realtime for `public.gym_workspaces` in Supabase Dashboard > Database > Replication.
+For a temporary no-login setup, use Realtime Database rules like this:
+
+```json
+{
+  "rules": {
+    "gym_workspaces": {
+      "$workspaceId": {
+        ".read": true,
+        ".write": true
+      }
+    }
+  }
+}
+```
+
+Security note: these rules are public. Before storing real customer data long-term, replace them with Firebase Authentication based rules.
 
 Set these build/runtime environment variables in every host that builds the app:
 
 ```bash
-eas env:create --environment production --name EXPO_PUBLIC_SUPABASE_URL --value "https://your-project.supabase.co" --visibility plain
-eas env:create --environment production --name EXPO_PUBLIC_SUPABASE_ANON_KEY --value "your_supabase_anon_key_here" --visibility plain
+eas env:create --environment production --name EXPO_PUBLIC_FIREBASE_DATABASE_URL --value "https://your-project-default-rtdb.firebaseio.com" --visibility plain
 eas env:create --environment production --name EXPO_PUBLIC_SYNC_WORKSPACE_ID --value "k1-gym-main" --visibility plain
 ```
 
 For GitHub Actions, add repository secrets with the same names:
 
 ```text
-EXPO_PUBLIC_SUPABASE_URL
-EXPO_PUBLIC_SUPABASE_ANON_KEY
+EXPO_PUBLIC_FIREBASE_DATABASE_URL
 EXPO_PUBLIC_SYNC_WORKSPACE_ID
 ```
 
@@ -86,7 +73,7 @@ npx expo export --platform web
 eas deploy --prod
 ```
 
-Security note: the policies above are a temporary no-login setup. Before storing real customer data long-term, replace them with authenticated-user policies.
+Security note: the rules above are a temporary no-login setup. Before storing real customer data long-term, replace them with authenticated-user rules.
 
 ## Build Locally
 
@@ -124,8 +111,7 @@ http://127.0.0.1:3000
 4. Add environment variables:
    - `NODE_ENV=production`
    - `EXPO_PUBLIC_APP_ENV=production`
-   - `EXPO_PUBLIC_SUPABASE_URL`
-   - `EXPO_PUBLIC_SUPABASE_ANON_KEY`
+   - `EXPO_PUBLIC_FIREBASE_DATABASE_URL`
    - `EXPO_PUBLIC_SYNC_WORKSPACE_ID=k1-gym-main`
 5. Deploy.
 
@@ -142,8 +128,7 @@ http://127.0.0.1:3000
 4. Add environment variables:
    - `NODE_ENV=production`
    - `EXPO_PUBLIC_APP_ENV=production`
-   - `EXPO_PUBLIC_SUPABASE_URL`
-   - `EXPO_PUBLIC_SUPABASE_ANON_KEY`
+   - `EXPO_PUBLIC_FIREBASE_DATABASE_URL`
    - `EXPO_PUBLIC_SYNC_WORKSPACE_ID=k1-gym-main`
 5. Deploy.
 
@@ -154,8 +139,7 @@ http://127.0.0.1:3000
 The GitHub Actions workflow builds the Expo web export on pushes and pull requests using Node 20. Configure these repository secrets if you want automated hosting deploys:
 
 ```text
-EXPO_PUBLIC_SUPABASE_URL
-EXPO_PUBLIC_SUPABASE_ANON_KEY
+EXPO_PUBLIC_FIREBASE_DATABASE_URL
 EXPO_PUBLIC_SYNC_WORKSPACE_ID
 VERCEL_TOKEN
 VERCEL_ORG_ID
@@ -167,7 +151,7 @@ NETLIFY_SITE_ID
 ## Pre-Launch Checklist
 
 - Replace starter members/plans with real gym data.
-- Confirm Supabase env vars are present in the active hosting provider before adding real member data.
+- Confirm Firebase env vars are present in the active hosting provider before adding real member data.
 - Add login before using the app across multiple staff devices with sensitive customer data.
 - Configure a custom domain and HTTPS on the host.
 - Test add member, edit member, renew membership, delete member, and restore starter data on the deployed URL.
