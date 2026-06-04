@@ -1,0 +1,40 @@
+{
+  "expo": {
+    "name": "K1 Gym & Fitness Center",
+    "slug": "k1-gym",
+    "version": "1.0.0",
+    "description": "Complete gym management system with member roster, plans, renewals, and analytics",
+    "owner": "avnishbhosales-organization",
+    "userInterfaceStyle": "dark",
+    "jsEngine": "jsc",
+    "plugins": [
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "jsEngine": "jsc",
+            "useFrameworks": "static"
+          }
+        }
+      ],
+      "expo-font"
+    ],
+    "web": {
+      "output": "single",
+      "bundler": "metro"
+    },
+    "android": {
+      "package": "com.k1gym.fitnesscenter",
+      "versionCode": 1
+    },
+    "ios": {
+      "bundleIdentifier": "com.k1gym.fitnesscenter",
+      "buildNumber": "1"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "2e3c5cd8-3d08-4fa2-b866-bc82f3ea0cea"
+      }
+    }
+  }
+}

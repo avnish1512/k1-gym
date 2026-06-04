@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>K1 GYM & FITNESS CENTER - Owner Dashboard</title>
+  
+  <!-- Fonts & Icons -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet"/>
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+  
+  <!-- CSS Stylesheet -->
+  <link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+
+  <!-- Top App Bar -->
+  <header class="app-header">
+    <div class="header-brand">
+      <span class="material-symbols-outlined brand-icon">fitness_center</span>
+      <span class="brand-name" id="gymNameDisplay">K1 GYM</span>
+    </div>
+    <div class="header-actions">
+      <div class="user-profile">
+        <span class="user-name">Manager Console</span>
+        <div class="avatar">M</div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Sidebar Navigation (Desktop) -->
+  <nav class="sidebar-nav">
+    <div class="sidebar-header">
+      <div class="admin-badge">
+        <div class="admin-avatar">A</div>
+        <div class="admin-info">
+          <span class="admin-name">Admin Portal</span>
+          <span class="admin-role">Gym Owner</span>
+        </div>
+      </div>
+    </div>
+    <ul class="nav-links">
+      <li>
+        <button class="nav-btn active" data-view="dashboard">
+          <span class="material-symbols-outlined">dashboard</span>
+          <span>Dashboard</span>
+        </button>
+      </li>
+      <li>
+        <button class="nav-btn" data-view="members">
+          <span class="material-symbols-outlined">group</span>
+          <span>Members</span>
+        </button>
+      </li>
+      <li>
+        <button class="nav-btn" data-view="plans">
+          <span class="material-symbols-outlined">payments</span>
+          <span>Membership Plans</span>
+        </button>
+      </li>
+      <li>
+        <button class="nav-btn" data-view="settings">
+          <span class="material-symbols-outlined">settings</span>
+          <span>Settings</span>
+        </button>
+      </li>
+    </ul>
+  </nav>
+
+  <!-- Bottom Navigation (Mobile) -->
+  <nav class="mobile-nav">
+    <button class="mobile-nav-btn active" data-view="dashboard">
+      <span class="material-symbols-outlined">home</span>
+      <span>Home</span>
+    </button>
+    <button class="mobile-nav-btn" data-view="members">
+      <span class="material-symbols-outlined">group</span>
+      <span>Members</span>
+    </button>
+    <button class="mobile-nav-btn" data-view="plans">
+      <span class="material-symbols-outlined">payments</span>
+      <span>Plans</span>
+    </button>
+    <button class="mobile-nav-btn" data-view="settings">
+      <span class="material-symbols-outlined">settings</span>
+      <span>Settings</span>
+    </button>
+  </nav>
+
+  <!-- Main Work Area -->
+  <main class="main-layout">
+    <div class="content-container">
+
+      <!-- ================= DASHBOARD VIEW ================= -->
+      <section id="view-dashboard" class="view-section active">
+        <div class="view-header">
+          <h1 class="view-title">Overview</h1>
+          <p class="view-subtitle">Real-time facility performance and revenue metrics.</p>
+        </div>
+
+        <!-- KPI Grid -->
+        <div class="kpi-grid">
+          <!-- Active Members KPI -->
+          <div class="kpi-card">
+            <div class="kpi-icon-wrapper blue">
+              <span class="material-symbols-outlined">group</span>
+            </div>
+            <div class="kpi-content">
+              <span class="kpi-label">Active Members</span>
+              <div class="kpi-value-row">
+                <span class="kpi-value" id="kpi-active-members">0</span>
+                <span class="trend-badge positive">
+                  <span class="material-symbols-outlined">arrow_upward</span>
+                  <span id="kpi-member-trend">12%</span>
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Revenue KPI -->
+          <div class="kpi-card">
+            <div class="kpi-icon-wrapper green">
+              <span class="material-symbols-outlined">account_balance_wallet</span>
+            </div>
+            <div class="kpi-content">
+              <span class="kpi-label">Revenue (MTD)</span>
+              <div class="kpi-value-row">
+                <span class="kpi-value font-mono" id="kpi-revenue">₹0</span>
+                <span class="trend-badge positive">
+                  <span class="material-symbols-outlined">arrow_upward</span>
+                  <span>8%</span>
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Pending collections KPI -->
+          <div class="kpi-card">
+            <div class="kpi-icon-wrapper red">
+              <span class="material-symbols-outlined">warning</span>
+            </div>
+            <div class="kpi-content">
+              <span class="kpi-label">Pending Collections</span>
+              <div class="kpi-value-row">
+                <span class="kpi-value font-mono danger-text" id="kpi-pending">₹0</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Analytics Visual Section (Charts & Info) -->
+        <div class="dashboard-analytics-grid">
+          <!-- Revenue Trend (SVG Chart) -->
+          <div class="analytics-card">
+            <div class="card-header">
+              <h3 class="card-title">Revenue Performance (Past 6 Months)</h3>
+            </div>
+            <div class="chart-wrapper">
+              <svg class="analytics-chart" viewBox="0 0 500 200">
+                <!-- Grid Lines -->
+                <line x1="40" y1="20" x2="480" y2="20" stroke="#e2e8f0" stroke-dasharray="4"/>
+                <line x1="40" y1="70" x2="480" y2="70" stroke="#e2e8f0" stroke-dasharray="4"/>
+                <line x1="40" y1="120" x2="480" y2="120" stroke="#e2e8f0" stroke-dasharray="4"/>
+                <line x1="40" y1="170" x2="480" y2="170" stroke="#e2e8f0" />
+                
+                <!-- Chart Line Gradient -->
+                <defs>
+                  <linearGradient id="chartGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stop-color="#3b82f6" stop-opacity="0.2"/>
+                    <stop offset="100%" stop-color="#3b82f6" stop-opacity="0.0"/>
+                  </linearGradient>
+                </defs>
+                
+                <!-- Area Fill -->
+                <path d="M 40 170 L 40 130 Q 120 110 200 90 T 360 50 L 480 30 L 480 170 Z" fill="url(#chartGrad)"/>
+                
+                <!-- Area Path Line -->
+                <path d="M 40 130 Q 120 110 200 90 T 360 50 L 480 30" fill="none" stroke="#2563eb" stroke-width="3"/>
+                
+                <!-- Data Nodes -->
+                <circle cx="40" cy="130" r="4" fill="#ffffff" stroke="#2563eb" stroke-width="2"/>
+                <circle cx="120" cy="115" r="4" fill="#ffffff" stroke="#2563eb" stroke-width="2"/>
+                <circle cx="200" cy="90" r="4" fill="#ffffff" stroke="#2563eb" stroke-width="2"/>
+                <circle cx="280" cy="75" r="4" fill="#ffffff" stroke="#2563eb" stroke-width="2"/>
+                <circle cx="360" cy="50" r="4" fill="#ffffff" stroke="#2563eb" stroke-width="2"/>
+                <circle cx="480" cy="30" r="4" fill="#ffffff" stroke="#2563eb" stroke-width="2"/>
+                
+                <!-- Labels -->
+                <text x="40" y="190" text-anchor="middle" font-size="10" fill="#64748b">Jan</text>
+                <text x="120" y="190" text-anchor="middle" font-size="10" fill="#64748b">Feb</text>
+                <text x="200" y="190" text-anchor="middle" font-size="10" fill="#64748b">Mar</text>
+                <text x="280" y="190" text-anchor="middle" font-size="10" fill="#64748b">Apr</text>
+                <text x="360" y="190" text-anchor="middle" font-size="10" fill="#64748b">May</text>
+                <text x="480" y="190" text-anchor="middle" font-size="10" fill="#64748b">Jun</text>
+                
+                <text x="15" y="173" text-anchor="middle" font-size="9" fill="#94a3b8">0</text>
+                <text x="15" y="123" text-anchor="middle" font-size="9" fill="#94a3b8">50K</text>
+                <text x="15" y="73" text-anchor="middle" font-size="9" fill="#94a3b8">1L</text>
+                <text x="15" y="23" text-anchor="middle" font-size="9" fill="#94a3b8">1.5L</text>
+              </svg>
+            </div>
+          </div>
+
+          <!-- Quick Actions and Logs -->
+          <div class="analytics-card">
+            <div class="card-header">
+              <h3 class="card-title">Recent Activity Log</h3>
+            </div>
+            <div class="activity-timeline" id="recentActivityList">
+              <!-- Rendered Dynamically in JS -->
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= MEMBERS VIEW ================= -->
+      <section id="view-members" class="view-section">
+        <div class="view-header-row">
+          <div class="view-header">
+            <h1 class="view-title">Member Roster</h1>
+            <p class="view-subtitle">Manage memberships, billing statuses, and renewals.</p>
+          </div>
+          <button class="btn btn-primary" id="btnOpenAddMember">
+            <span class="material-symbols-outlined">person_add</span>
+            <span>Add Member</span>
+          </button>
+        </div>
+
+        <!-- Filter & Search Controls -->
+        <div class="table-controls">
+          <div class="search-box">
+            <span class="material-symbols-outlined search-icon">search</span>
+            <input type="text" id="memberSearch" placeholder="Search by name, phone, or plan..."/>
+          </div>
+          
+          <div class="filter-group">
+            <button class="filter-chip active" data-filter="all">All</button>
+            <button class="filter-chip" data-filter="paid">Paid</button>
+            <button class="filter-chip" data-filter="overdue">Overdue</button>
+          </div>
+        </div>
+
+        <!-- Desktop Members Table Container -->
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Member</th>
+                <th>Plan Name</th>
+                <th>Next Due Date</th>
+                <th>Status</th>
+                <th class="text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="memberTableBody">
+              <!-- Rendered Dynamically in JS -->
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Mobile Card-based Member List (Visible on mobile viewports instead of table) -->
+        <div class="mobile-members-list" id="memberMobileList">
+          <!-- Rendered Dynamically in JS -->
+        </div>
+      </section>
+
+      <!-- ================= PLANS VIEW ================= -->
+      <section id="view-plans" class="view-section">
+        <div class="view-header-row">
+          <div class="view-header">
+            <h1 class="view-title">Membership Plans</h1>
+            <p class="view-subtitle">Add or edit plans available for gym registrations.</p>
+          </div>
+          <button class="btn btn-primary" id="btnOpenAddPlan">
+            <span class="material-symbols-outlined">add</span>
+            <span>Create Plan</span>
+          </button>
+        </div>
+
+        <!-- Plans Grid -->
+        <div class="plans-grid" id="plansContainer">
+          <!-- Rendered Dynamically in JS -->
+        </div>
+      </section>
+
+      <!-- ================= SETTINGS VIEW ================= -->
+      <section id="view-settings" class="view-section">
+        <div class="view-header">
+          <h1 class="view-title">System Settings</h1>
+          <p class="view-subtitle">Manage facility name, profiles, and dashboard configuration.</p>
+        </div>
+
+        <div class="settings-card">
+          <h3 class="settings-card-title">Gym Profile</h3>
+          <form id="settingsForm" class="settings-form">
+            <div class="form-group">
+              <label for="inputGymName">Gym Center Name</label>
+              <input type="text" id="inputGymName" class="form-control" required/>
+            </div>
+            <div class="form-group">
+              <label for="inputOwnerName">Owner Name</label>
+              <input type="text" id="inputOwnerName" class="form-control" required/>
+            </div>
+            <div class="form-group-row">
+              <div class="form-group">
+                <label for="inputCurrency">Default Currency</label>
+                <select id="inputCurrency" class="form-control">
+                  <option value="₹">INR (₹)</option>
+                  <option value="$">USD ($)</option>
+                  <option value="€">EUR (€)</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="inputTaxRate">Tax Rate (%)</label>
+                <input type="number" id="inputTaxRate" min="0" max="100" class="form-control"/>
+              </div>
+            </div>
+            <button type="submit" class="btn btn-primary">Save Settings</button>
+          </form>
+        </div>
+
+        <div class="settings-card danger-zone">
+          <h3 class="settings-card-title danger-text">Danger Zone</h3>
+          <p class="settings-desc">Resetting your workspace wipes all custom additions and restores the pre-populated mock dataset.</p>
+          <button class="btn btn-danger" id="btnResetDatabase">
+            <span class="material-symbols-outlined">restore</span>
+            <span>Restore Factory Mock Data</span>
+          </button>
+        </div>
+      </section>
+
+    </div>
+  </main>
+
+  <!-- ================= ADD / EDIT MEMBER MODAL ================= -->
+  <div class="modal-overlay" id="memberModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2 class="modal-title" id="memberModalTitle">Register New Member</h2>
+        <button class="modal-close-btn" id="btnCloseMemberModal">
+          <span class="material-symbols-outlined">close</span>
+        </button>
+      </div>
+      <form id="memberForm" class="modal-form">
+        <input type="hidden" id="memberIdHidden"/>
+        
+        <div class="form-group">
+          <label for="memberName">Full Name</label>
+          <input type="text" id="memberName" class="form-control" placeholder="e.g. Rohan Sharma" required/>
+        </div>
+        
+        <div class="form-group">
+          <label for="memberPhone">Phone Number</label>
+          <input type="tel" id="memberPhone" class="form-control" placeholder="e.g. +91 9876543210" required/>
+        </div>
+        
+        <div class="form-group">
+          <label for="memberPlan">Assigned Plan</label>
+          <select id="memberPlan" class="form-control" required>
+            <!-- Filled Dynamically -->
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="memberDueDate">Registration/Start Date</label>
+          <input type="date" id="memberDueDate" class="form-control" required/>
+        </div>
+
+        <div class="form-group">
+          <label for="memberStatus">Initial Payment Status</label>
+          <select id="memberStatus" class="form-control" required>
+            <option value="paid">Paid (1-Month Extended)</option>
+            <option value="overdue">Overdue (Needs payment immediately)</option>
+          </select>
+        </div>
+        
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" id="btnCancelMemberModal">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="btnSaveMember">Save Member</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ================= RENEW MEMBERSHIP MODAL ================= -->
+  <div class="modal-overlay" id="renewModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2 class="modal-title">Renew Membership</h2>
+        <button class="modal-close-btn" id="btnCloseRenewModal">
+          <span class="material-symbols-outlined">close</span>
+        </button>
+      </div>
+      <form id="renewForm" class="modal-form">
+        <input type="hidden" id="renewMemberIdHidden"/>
+        
+        <div class="renew-member-summary">
+          <div class="detail-block">
+            <span class="detail-label">Member</span>
+            <span class="detail-val" id="renewMemberName">---</span>
+          </div>
+          <div class="detail-block">
+            <span class="detail-label">Current Plan</span>
+            <span class="detail-val" id="renewMemberPlan">---</span>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="renewPlanSelect">Renewal Plan</label>
+          <select id="renewPlanSelect" class="form-control" required>
+            <!-- Filled Dynamically -->
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="renewPaymentMethod">Payment Mode</label>
+          <select id="renewPaymentMethod" class="form-control">
+            <option value="UPI / GPay">UPI / GPay</option>
+            <option value="Cash">Cash</option>
+            <option value="Card">Credit/Debit Card</option>
+            <option value="Bank Transfer">Net Banking</option>
+          </select>
+        </div>
+
+        <div class="renew-price-box">
+          <div class="price-line">
+            <span>Base Price:</span>
+            <span id="renewBasePrice" class="font-mono">₹0.00</span>
+          </div>
+          <div class="price-line">
+            <span>Tax (GST):</span>
+            <span id="renewTaxAmount" class="font-mono">₹0.00</span>
+          </div>
+          <hr class="divider"/>
+          <div class="price-line total">
+            <span>Total Collected:</span>
+            <span id="renewTotalAmount" class="font-mono">₹0.00</span>
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" id="btnCancelRenewModal">Cancel</button>
+          <button type="submit" class="btn btn-success">
+            <span class="material-symbols-outlined text-sm">payments</span>
+            <span>Confirm & Renew</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ================= ADD / EDIT PLAN MODAL ================= -->
+  <div class="modal-overlay" id="planModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2 class="modal-title" id="planModalTitle">Create Membership Plan</h2>
+        <button class="modal-close-btn" id="btnClosePlanModal">
+          <span class="material-symbols-outlined">close</span>
+        </button>
+      </div>
+      <form id="planForm" class="modal-form">
+        <input type="hidden" id="planIdHidden"/>
+        
+        <div class="form-group">
+          <label for="planName">Plan Name</label>
+          <input type="text" id="planName" class="form-control" placeholder="e.g. 3-Month Premium" required/>
+        </div>
+        
+        <div class="form-group-row">
+          <div class="form-group">
+            <label for="planPrice">Price (Base Amount)</label>
+            <input type="number" id="planPrice" min="0" class="form-control" placeholder="e.g. 2999" required/>
+          </div>
+          
+          <div class="form-group">
+            <label for="planDuration">Duration (Months)</label>
+            <input type="number" id="planDuration" min="1" max="60" class="form-control" placeholder="e.g. 3" required/>
+          </div>
+        </div>
+        
+        <div class="form-group">
+          <label for="planDescription">Key Features / Description (comma-separated)</label>
+          <input type="text" id="planDescription" class="form-control" placeholder="e.g. Gym Access, Free Trainer, Diet Plan"/>
+        </div>
+        
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" id="btnCancelPlanModal">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="btnSavePlan">Save Plan</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- JavaScript Application Entry -->
+  <script src="app.js"></script>
+</body>
+</html>
