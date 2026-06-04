@@ -29,9 +29,6 @@ jobs:
       
       - name: Build for web
         run: npm run build:web
-        env:
-          EXPO_PUBLIC_FIREBASE_DATABASE_URL: ${{ secrets.EXPO_PUBLIC_FIREBASE_DATABASE_URL }}
-          EXPO_PUBLIC_SYNC_WORKSPACE_ID: ${{ secrets.EXPO_PUBLIC_SYNC_WORKSPACE_ID || 'k1-gym-main' }}
       
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4

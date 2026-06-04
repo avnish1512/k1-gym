@@ -16,7 +16,6 @@ import {
   AppState as NativeAppState
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import 'react-native-url-polyfill/auto';
 import Svg, { Path, Circle, Text as SvgText, Line, Defs, LinearGradient, Stop } from 'react-native-svg';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -25,12 +24,6 @@ const LEGACY_STORAGE_KEY = 'k1gym_state';
 const THEME_STORAGE_KEY = 'k1gym_theme_mode';
 const REALTIME_CHANNEL_NAME = 'k1gym_realtime_state';
 const REALTIME_STORAGE_EVENT_KEY = 'k1gym_realtime_event';
-const ONLINE_SYNC_ROOT = 'gym_workspaces';
-const ONLINE_SYNC_WORKSPACE_ID = process.env.EXPO_PUBLIC_SYNC_WORKSPACE_ID || 'k1-gym-main';
-const FIREBASE_DATABASE_URL = (process.env.EXPO_PUBLIC_FIREBASE_DATABASE_URL || '').replace(/\/+$/, '');
-const ONLINE_SYNC_CONFIGURED = Boolean(FIREBASE_DATABASE_URL);
-const ONLINE_SYNC_SETUP_MESSAGE = 'Add Firebase Realtime Database URL env var, then redeploy.';
-const ONLINE_SYNC_SETUP_ERROR = 'Online sync not configured';
 const APP_DATA_VERSION = 2;
 
 const THEMES = {
@@ -87,18 +80,6 @@ const THEMES = {
 };
 
 const getTheme = (mode) => THEMES[mode] || THEMES.dark;
-
-const getOnlineWorkspacePath = () => `${ONLINE_SYNC_ROOT}/${ONLINE_SYNC_WORKSPACE_ID}`;
-
-const buildFirebaseUrl = (path, query = '') => {
-  if (!FIREBASE_DATABASE_URL) return '';
-  const encodedPath = path
-    .split('/')
-    .filter(Boolean)
-    .map(part => encodeURIComponent(part))
-    .join('/');
-  return `${FIREBASE_DATABASE_URL}/${encodedPath}.json${query ? `?${query}` : ''}`;
-};
 
 // --- STARTER DATA ---
 const DEFAULT_PLANS = [
@@ -290,11 +271,11 @@ export default function App() {
   const appStateRef = useRef(null);
   const [syncStatus, setSyncStatus] = useState({
     live: false,
-    mode: 'online',
-    onlineReady: false,
+    mode: 'local',
+    localReady: false,
     lastSyncedAt: null,
-    message: ONLINE_SYNC_CONFIGURED ? 'Connecting online sync' : ONLINE_SYNC_SETUP_MESSAGE,
-    error: ONLINE_SYNC_CONFIGURED ? null : ONLINE_SYNC_SETUP_ERROR
+    message: 'Loading local workspace',
+    error: null
   });
 
   // --- FORM FIELD STATES ---
@@ -364,104 +345,24 @@ export default function App() {
     }
   };
 
-  const pushStateOnline = async (state, message = 'Saved online') => {
-    if (!ONLINE_SYNC_CONFIGURED) {
-      return { ok: false, skipped: true };
-    }
-
+  const persistState = async (state, { broadcast = true, message = 'Saved locally' } = {}) => {
     try {
-      const normalized = normalizeAppState(state);
-      const response = await fetch(buildFirebaseUrl(getOnlineWorkspacePath()), {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          state: normalized,
-          revision: Number(normalized.meta?.revision) || 1,
-          updated_at: new Date().toISOString()
-        })
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Firebase save failed (${response.status}): ${errorText}`);
-      }
-
+      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      if (broadcast) publishStateToPeers(state);
       setSyncStatus({
         live: true,
-        mode: 'online',
-        onlineReady: true,
+        mode: 'local',
+        localReady: true,
         lastSyncedAt: new Date().toISOString(),
         message,
         error: null
       });
-      return { ok: true };
-    } catch (e) {
-      console.error('Failed to save online state', e);
-      setSyncStatus(prev => ({
-        ...prev,
-        live: false,
-        mode: 'online',
-        onlineReady: false,
-        error: 'Online save failed'
-      }));
-      return { ok: false, error: e };
-    }
-  };
-
-  const fetchOnlineWorkspace = async () => {
-    if (!ONLINE_SYNC_CONFIGURED) {
-      return { ok: false, skipped: true };
-    }
-
-    try {
-      const response = await fetch(buildFirebaseUrl(getOnlineWorkspacePath()));
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Firebase fetch failed (${response.status}): ${errorText}`);
-      }
-
-      return { ok: true, data: await response.json() };
-    } catch (e) {
-      return { ok: false, error: e };
-    }
-  };
-
-  const persistState = async (state, { broadcast = true, online = true, message = 'Saved to device cache' } = {}) => {
-    try {
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-      if (broadcast && ONLINE_SYNC_CONFIGURED) publishStateToPeers(state);
-      setSyncStatus(prev => {
-        if (!ONLINE_SYNC_CONFIGURED) {
-          return {
-            live: false,
-            mode: 'online',
-            onlineReady: false,
-            lastSyncedAt: prev.lastSyncedAt,
-            message: ONLINE_SYNC_SETUP_MESSAGE,
-            error: ONLINE_SYNC_SETUP_ERROR
-          };
-        }
-
-        return {
-          live: true,
-          mode: 'online',
-          onlineReady: prev.onlineReady,
-          lastSyncedAt: new Date().toISOString(),
-          message,
-          error: null
-        };
-      });
-      if (online) {
-        await pushStateOnline(state, message);
-      }
     } catch (e) {
       console.error('Failed to persist state', e);
       setSyncStatus(prev => ({
         ...prev,
         live: false,
-        error: 'Device cache save failed'
+        error: 'Local save failed'
       }));
     }
   };
@@ -473,53 +374,7 @@ export default function App() {
 
     lastRevisionRef.current = incomingRevision;
     setAppState(normalized);
-    await persistState(normalized, { broadcast: true, online: false, message });
-  };
-
-  const syncOnlineWorkspace = async (localState, message = 'Online sync checked') => {
-    if (!ONLINE_SYNC_CONFIGURED) return;
-
-    try {
-      const result = await fetchOnlineWorkspace();
-      if (!result.ok) throw result.error;
-
-      const onlineState = result.data?.state ? normalizeAppState(result.data.state) : null;
-      const onlineRevision = Number(onlineState?.meta?.revision || result.data?.revision) || 0;
-      const localRevision = Number(localState?.meta?.revision) || 0;
-
-      if (!onlineState) {
-        await pushStateOnline(localState || appStateRef.current || createStarterState(), 'Online workspace created');
-        return;
-      }
-
-      if (onlineRevision > lastRevisionRef.current) {
-        await applyIncomingState(onlineState, 'Synced latest online changes');
-        return;
-      }
-
-      if (localState && localRevision > onlineRevision) {
-        await pushStateOnline(localState, 'Uploaded device cache to online sync');
-        return;
-      }
-
-      setSyncStatus({
-        live: true,
-        mode: 'online',
-        onlineReady: true,
-        lastSyncedAt: new Date().toISOString(),
-        message,
-        error: null
-      });
-    } catch (e) {
-      console.error('Failed to sync cloud workspace', e);
-      setSyncStatus(prev => ({
-        ...prev,
-        live: false,
-        mode: 'online',
-        onlineReady: false,
-        error: 'Online sync failed'
-      }));
-    }
+    await persistState(normalized, { broadcast: false, message });
   };
 
   const saveState = async (nextState, changeReason = 'Workspace updated') => {
@@ -548,18 +403,15 @@ export default function App() {
         setAppState(nextState);
         await persistState(nextState, {
           broadcast: overdueRefresh.changed,
-          online: false,
           message: legacySaved ? 'Migrated saved workspace' : 'Workspace ready'
         });
-        await syncOnlineWorkspace(nextState, 'Workspace ready');
       } catch (e) {
         console.error('Failed to load state', e);
         const fallbackState = createStarterState();
         if (!mounted) return;
         lastRevisionRef.current = fallbackState.meta.revision;
         setAppState(fallbackState);
-        await persistState(fallbackState, { broadcast: false, online: false, message: 'Starter workspace ready' });
-        await syncOnlineWorkspace(fallbackState, 'Starter workspace ready');
+        await persistState(fallbackState, { broadcast: false, message: 'Starter workspace ready' });
       }
     }
 
@@ -570,7 +422,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!ONLINE_SYNC_CONFIGURED || Platform.OS !== 'web' || typeof window === 'undefined') return undefined;
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return undefined;
 
     const handlePayload = (payload, message) => {
       if (!payload || payload.sourceId === clientIdRef.current || !payload.state) return;
@@ -598,74 +450,6 @@ export default function App() {
       window.removeEventListener('storage', handleStorage);
       broadcastChannelRef.current?.close?.();
       broadcastChannelRef.current = null;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!ONLINE_SYNC_CONFIGURED) return undefined;
-
-    const pullOnlineChanges = () => {
-      syncOnlineWorkspace(appStateRef.current, 'Checked online sync');
-    };
-
-    const handleRealtimeEvent = (event) => {
-      try {
-        const payload = JSON.parse(event.data);
-        const nextState = payload?.data?.state;
-        if (!nextState || nextState.meta?.updatedBy === clientIdRef.current) return;
-        applyIncomingState(nextState, 'Updated from online sync');
-      } catch (e) {
-        console.warn('Could not parse online realtime event', e);
-      }
-    };
-
-    let eventSource = null;
-    if (Platform.OS === 'web' && typeof window !== 'undefined' && 'EventSource' in window) {
-      eventSource = new window.EventSource(buildFirebaseUrl(getOnlineWorkspacePath()));
-      eventSource.onopen = () => {
-        setSyncStatus(prev => ({
-          ...prev,
-          live: true,
-          mode: 'online',
-          onlineReady: true,
-          message: prev.message === 'Connecting online sync' ? 'Online realtime connected' : prev.message,
-          error: null
-        }));
-      };
-      eventSource.onerror = () => {
-        setSyncStatus(prev => ({
-          ...prev,
-          live: false,
-          mode: 'online',
-          onlineReady: false,
-          error: 'Online realtime reconnecting'
-        }));
-      };
-      eventSource.addEventListener('put', handleRealtimeEvent);
-      eventSource.addEventListener('patch', handleRealtimeEvent);
-    }
-
-    const intervalId = setInterval(pullOnlineChanges, 30000);
-
-    if (Platform.OS === 'web' && typeof document !== 'undefined') {
-      const handleVisibilityChange = () => {
-        if (!document.hidden) pullOnlineChanges();
-      };
-      document.addEventListener('visibilitychange', handleVisibilityChange);
-      return () => {
-        clearInterval(intervalId);
-        document.removeEventListener('visibilitychange', handleVisibilityChange);
-        eventSource?.removeEventListener?.('put', handleRealtimeEvent);
-        eventSource?.removeEventListener?.('patch', handleRealtimeEvent);
-        eventSource?.close?.();
-      };
-    }
-
-    return () => {
-      clearInterval(intervalId);
-      eventSource?.removeEventListener?.('put', handleRealtimeEvent);
-      eventSource?.removeEventListener?.('patch', handleRealtimeEvent);
-      eventSource?.close?.();
     };
   }, []);
 
@@ -1203,17 +987,10 @@ export default function App() {
   // --- RENDER PARTS ---
   const renderSyncStatus = (compact = false) => {
     const lastSavedAt = syncStatus.lastSyncedAt || appState.meta?.updatedAt;
-    const onlineSetupRequired = !ONLINE_SYNC_CONFIGURED;
-    const statusLabel = onlineSetupRequired
-      ? 'Online setup'
-      : syncStatus.error
+    const statusLabel = syncStatus.error
       ? 'Sync issue'
-      : syncStatus.onlineReady
-        ? 'Online sync'
-        : 'Connecting';
-    const statusMeta = onlineSetupRequired
-      ? ONLINE_SYNC_SETUP_MESSAGE
-      : syncStatus.error || `${syncStatus.message} - ${formatRelativeSyncTime(lastSavedAt)}`;
+      : 'Local sync';
+    const statusMeta = syncStatus.error || `${syncStatus.message} - ${formatRelativeSyncTime(lastSavedAt)}`;
 
     return (
       <View style={[styles.syncStatus, compact && styles.syncStatusCompact]}>
@@ -1750,9 +1527,7 @@ export default function App() {
             <View style={styles.syncInfoItem}>
               <Text style={styles.bodyItemLabel}>Mode</Text>
               <Text style={styles.bodyItemVal}>
-                {!ONLINE_SYNC_CONFIGURED
-                  ? 'Online setup needed'
-                  : (syncStatus.onlineReady ? 'Online realtime sync' : 'Online sync pending')}
+                {syncStatus.localReady ? 'Local browser sync' : 'Local sync pending'}
               </Text>
             </View>
             <View style={styles.syncInfoItem}>
@@ -1762,9 +1537,7 @@ export default function App() {
             <View style={styles.syncInfoItem}>
               <Text style={styles.bodyItemLabel}>Last Saved</Text>
               <Text style={styles.bodyItemVal}>
-                {ONLINE_SYNC_CONFIGURED
-                  ? formatRelativeSyncTime(syncStatus.lastSyncedAt || appState.meta?.updatedAt)
-                  : 'Not online yet'}
+                {formatRelativeSyncTime(syncStatus.lastSyncedAt || appState.meta?.updatedAt)}
               </Text>
             </View>
           </View>
