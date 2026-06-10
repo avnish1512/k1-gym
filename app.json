@@ -7,6 +7,7 @@
     "owner": "avnishbhosales-organization",
     "userInterfaceStyle": "dark",
     "jsEngine": "jsc",
+    "icon": "./assets/icon.jpg",
     "plugins": [
       [
         "expo-build-properties",
@@ -25,15 +26,20 @@
     },
     "android": {
       "package": "com.k1gym.fitnesscenter",
-      "versionCode": 1
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon.jpg",
+        "backgroundColor": "#0c0c0f"
+      }
     },
     "ios": {
       "bundleIdentifier": "com.k1gym.fitnesscenter",
-      "buildNumber": "1"
+      "buildNumber": "1",
+      "icon": "./assets/icon.jpg"
     },
     "extra": {
       "eas": {
-        "projectId": "2e3c5cd8-3d08-4fa2-b866-bc82f3ea0cea"
+        "projectId": "c9dd00d5-6814-4505-9350-6fcb6d24557f"
       }
     }
   }

@@ -16,16 +16,27 @@ Current result:
 - `npm audit --omit=dev` reports zero vulnerabilities.
 - Local preview is running at `http://127.0.0.1:3000`.
 
-## Real-Time Mode
+## Supabase Backend
 
-The app is local-sync only:
-- Member, plan, transaction, settings, and theme data are saved in browser/device storage.
-- Open browser tabs on the same device sync through `BroadcastChannel` and storage events.
-- No Firebase, Supabase, or other online backend is used.
+The app uses Supabase Auth, Postgres, RLS, and realtime database changes:
+- Owner login uses Supabase email/password auth.
+- Member, plan, transaction, and gym settings data live in Supabase.
+- Theme preference remains local to the device/browser.
+- Web and mobile clients share the same database and refresh from Supabase realtime events.
 
-Saved data is versioned with a revision and last-saved timestamp. Overdue memberships refresh automatically while the app is open and when a tab becomes active.
+Run `supabase/schema.sql` in the Supabase SQL Editor before deploying the app. The schema starts with default gym settings only; members, plans, and transactions are empty.
 
-Important: data is not shared across different phones, computers, browsers, or cleared browser profiles. Export or back up important records before wiping browser storage.
+Owner setup:
+1. Create the owner user in Supabase Authentication.
+2. Copy the owner user's `auth.users.id`.
+3. Insert the owner into `public.app_admins`:
+
+```sql
+insert into public.app_admins (user_id, email, role)
+values ('OWNER_USER_ID_HERE', 'owner@example.com', 'owner');
+```
+
+4. Disable public signups in Supabase Auth settings for the owner-only v1.
 
 ## Build Locally
 
@@ -63,6 +74,8 @@ http://127.0.0.1:3000
 4. Add environment variables:
    - `NODE_ENV=production`
    - `EXPO_PUBLIC_APP_ENV=production`
+   - `EXPO_PUBLIC_SUPABASE_URL`
+   - `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
 5. Deploy.
 
 `vercel.json` already includes SPA rewrites, immutable asset caching, app-shell no-cache behavior, and security headers.
@@ -78,9 +91,20 @@ http://127.0.0.1:3000
 4. Add environment variables:
    - `NODE_ENV=production`
    - `EXPO_PUBLIC_APP_ENV=production`
+   - `EXPO_PUBLIC_SUPABASE_URL`
+   - `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
 5. Deploy.
 
 `netlify.toml` already includes SPA fallback, immutable asset caching, app-shell no-cache behavior, and security headers.
+
+## Mobile Builds
+
+For EAS builds, add the same public Supabase variables to the EAS environment or project secrets before building:
+
+```bash
+eas env:create --name EXPO_PUBLIC_SUPABASE_URL --value https://your-project-ref.supabase.co --environment production --visibility plaintext
+eas env:create --name EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY --value your_publishable_key --environment production --visibility plaintext
+```
 
 ## CI/CD
 
@@ -92,13 +116,73 @@ VERCEL_ORG_ID
 VERCEL_PROJECT_ID
 NETLIFY_AUTH_TOKEN
 NETLIFY_SITE_ID
+EXPO_PUBLIC_SUPABASE_URL
+EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY
 ```
 
 ## Pre-Launch Checklist
 
-- Replace starter members/plans with real gym data.
-- Confirm the gym owner understands that browser storage is local to each device.
+- Run `supabase/schema.sql` in the Supabase SQL Editor.
+- Create the owner Auth user and insert it into `public.app_admins`.
+- Disable public signups for owner-only access.
+- Add Supabase environment variables to Vercel, Netlify if used, GitHub Actions if needed, and EAS.
 - Keep a backup/export plan before using the app as the main customer record.
 - Configure a custom domain and HTTPS on the host.
-- Test add member, edit member, renew membership, delete member, and restore starter data on the deployed URL.
-- Export or back up data before wiping browser storage.
+- Test owner login, add plan, add member, edit member, renew membership, delete member, save settings, and clear cloud workspace on the deployed URL.
+- Test one web session and one mobile session to confirm Supabase realtime refresh.
+
+## Local Android Builds (via WSL on Windows)
+
+Since `eas build --local` is not natively supported on Windows, you can use the Windows Subsystem for Linux (WSL) to run the build.
+
+### Prerequisite Setup in WSL (e.g. Ubuntu)
+
+1. **Install Node.js & npm**:
+   ```bash
+   curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+   # Restart terminal, then:
+   nvm install 20
+   ```
+
+2. **Install EAS CLI**:
+   ```bash
+   npm install -g eas-cli
+   ```
+
+3. **Install Java JDK 17**:
+   ```bash
+   sudo apt update
+   sudo apt install openjdk-17-jdk -y
+   ```
+
+4. **Install Android Command Line Tools**:
+   Create a directory for the Android SDK (e.g., `~/Android/Sdk`) and download/install the Android Command Line tools.
+
+5. **Set Environment Variables**:
+   Add the following to your WSL `~/.bashrc` or `~/.zshrc`:
+   ```bash
+   export ANDROID_HOME=$HOME/Android/Sdk
+   export PATH=$PATH:$ANDROID_HOME/emulator
+   export PATH=$PATH:$ANDROID_HOME/platform-tools
+   export PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin
+   export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+   ```
+   Apply them:
+   ```bash
+   source ~/.bashrc
+   ```
+
+### Running the Build
+
+1. Navigate to the project directory in WSL:
+   ```bash
+   cd "/mnt/f/APP/k1 Gym fitness center"
+   ```
+2. Log in to Expo:
+   ```bash
+   eas login
+   ```
+3. Run the local Android build:
+   ```bash
+   eas build --local --platform android --profile preview
+   ```

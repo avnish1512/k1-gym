@@ -1,3 +1,4 @@
+import 'react-native-get-random-values';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   View,
@@ -18,13 +19,10 @@ import {
 import { MaterialIcons } from '@expo/vector-icons';
 import Svg, { Path, Circle, Text as SvgText, Line, Defs, LinearGradient, Stop } from 'react-native-svg';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { supabase, isSupabaseConfigured, supabaseConfigError } from './lib/supabase';
 
-const STORAGE_KEY = 'k1gym_state_v2';
-const LEGACY_STORAGE_KEY = 'k1gym_state';
 const THEME_STORAGE_KEY = 'k1gym_theme_mode';
-const REALTIME_CHANNEL_NAME = 'k1gym_realtime_state';
-const REALTIME_STORAGE_EVENT_KEY = 'k1gym_realtime_event';
-const APP_DATA_VERSION = 2;
+const APP_DATA_VERSION = 3;
 
 const THEMES = {
   dark: {
@@ -81,25 +79,6 @@ const THEMES = {
 
 const getTheme = (mode) => THEMES[mode] || THEMES.dark;
 
-// --- STARTER DATA ---
-const DEFAULT_PLANS = [
-  { id: "p1", name: "Monthly Cardio", price: 1200, duration: 1, features: "Cardio Access, Locker Room, 1 Safe Session" },
-  { id: "p2", name: "3-Month Premium", price: 3200, duration: 3, features: "All Gym Access, Trainer Guidance, Free Steam Bath" },
-  { id: "p3", name: "Annual VIP Elite", price: 11999, duration: 12, features: "Full 24/7 Access, Personal Trainer, Diet Matrix, Free Towels" }
-];
-
-const DEFAULT_MEMBERS = [
-  { id: "m1", name: "Rohan Sharma", phone: "+91 9876543210", planId: "p2", dueDate: "2026-04-15", status: "overdue" },
-  { id: "m2", name: "Amit Patel", phone: "+91 9123456789", planId: "p1", dueDate: "2026-06-10", status: "paid" },
-  { id: "m3", name: "Priya Singh", phone: "+91 8887776665", planId: "p3", dueDate: "2026-07-28", status: "paid" }
-];
-
-const DEFAULT_TRANSACTIONS = [
-  { id: "t1", memberName: "Amit Patel", planName: "Monthly Cardio", amount: 1416, date: "2026-05-10", mode: "UPI / GPay" },
-  { id: "t2", memberName: "Priya Singh", planName: "Annual VIP Elite", amount: 14158, date: "2026-05-28", mode: "Card" },
-  { id: "t3", memberName: "Rohan Sharma", planName: "3-Month Premium", amount: 3776, date: "2026-01-15", mode: "Cash" }
-];
-
 const DEFAULT_SETTINGS = {
   gymName: "K1 GYM & FITNESS",
   ownerName: "Avnish",
@@ -147,17 +126,17 @@ const formatDateLabel = (value) => {
   return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 };
 
-const createStarterState = () => ({
-  members: cloneList(DEFAULT_MEMBERS),
-  plans: cloneList(DEFAULT_PLANS),
-  transactions: cloneList(DEFAULT_TRANSACTIONS),
+const createEmptyState = () => ({
+  members: [],
+  plans: [],
+  transactions: [],
   settings: { ...DEFAULT_SETTINGS },
   meta: {
     dataVersion: APP_DATA_VERSION,
     revision: 1,
     updatedAt: new Date().toISOString(),
     updatedBy: 'system',
-    changeReason: 'Starter workspace created'
+    changeReason: 'Cloud workspace ready'
   }
 });
 
@@ -165,9 +144,9 @@ const normalizeAppState = (rawState) => {
   const raw = rawState && typeof rawState === 'object' ? rawState : {};
   const now = new Date().toISOString();
   return {
-    members: Array.isArray(raw.members) ? cloneList(raw.members) : cloneList(DEFAULT_MEMBERS),
-    plans: Array.isArray(raw.plans) ? cloneList(raw.plans) : cloneList(DEFAULT_PLANS),
-    transactions: Array.isArray(raw.transactions) ? cloneList(raw.transactions) : cloneList(DEFAULT_TRANSACTIONS),
+    members: Array.isArray(raw.members) ? cloneList(raw.members) : [],
+    plans: Array.isArray(raw.plans) ? cloneList(raw.plans) : [],
+    transactions: Array.isArray(raw.transactions) ? cloneList(raw.transactions) : [],
     settings: { ...DEFAULT_SETTINGS, ...(raw.settings || {}) },
     meta: {
       dataVersion: APP_DATA_VERSION,
@@ -177,6 +156,98 @@ const normalizeAppState = (rawState) => {
       changeReason: raw.meta?.changeReason || 'Workspace loaded'
     }
   };
+};
+
+const fromSettingsRow = (row) => ({
+  gymName: row?.gym_name || DEFAULT_SETTINGS.gymName,
+  ownerName: row?.owner_name || DEFAULT_SETTINGS.ownerName,
+  currency: row?.currency || DEFAULT_SETTINGS.currency,
+  taxRate: Number(row?.tax_rate ?? DEFAULT_SETTINGS.taxRate)
+});
+
+const toSettingsRow = (settings) => ({
+  id: 1,
+  gym_name: settings.gymName || DEFAULT_SETTINGS.gymName,
+  owner_name: settings.ownerName || DEFAULT_SETTINGS.ownerName,
+  currency: settings.currency || DEFAULT_SETTINGS.currency,
+  tax_rate: Number(settings.taxRate ?? DEFAULT_SETTINGS.taxRate)
+});
+
+const fromPlanRow = (row) => ({
+  id: row.id,
+  name: row.name,
+  price: Number(row.price) || 0,
+  duration: Number(row.duration) || 1,
+  features: row.features || ''
+});
+
+const toPlanRow = (plan) => ({
+  id: plan.id,
+  name: plan.name,
+  price: Number(plan.price) || 0,
+  duration: Number(plan.duration) || 1,
+  features: plan.features || ''
+});
+
+const fromMemberRow = (row) => ({
+  id: row.id,
+  name: row.name,
+  phone: row.phone,
+  planId: row.plan_id,
+  dueDate: row.due_date,
+  status: row.status
+});
+
+const toMemberRow = (member) => ({
+  id: member.id,
+  name: member.name,
+  phone: member.phone,
+  plan_id: member.planId,
+  due_date: member.dueDate,
+  status: member.status
+});
+
+const fromTransactionRow = (row) => ({
+  id: row.id,
+  memberId: row.member_id || null,
+  memberName: row.member_name,
+  planName: row.plan_name,
+  amount: Number(row.amount) || 0,
+  date: row.date,
+  mode: row.mode
+});
+
+const toTransactionRow = (transaction, members = []) => {
+  const linkedMember = transaction.memberId
+    ? members.find(member => member.id === transaction.memberId)
+    : members.find(member => member.name === transaction.memberName);
+
+  return {
+    id: transaction.id,
+    member_id: linkedMember?.id || null,
+    member_name: transaction.memberName,
+    plan_name: transaction.planName,
+    amount: Number(transaction.amount) || 0,
+    date: transaction.date,
+    mode: transaction.mode
+  };
+};
+
+const getDeletedIds = (previousRows = [], nextRows = []) => {
+  const nextIds = new Set(nextRows.map(row => row.id));
+  return previousRows.map(row => row.id).filter(id => !nextIds.has(id));
+};
+
+const getLatestTimestamp = (...rows) => {
+  const timestamps = rows
+    .flat()
+    .map(row => row?.updated_at || row?.created_at)
+    .filter(Boolean)
+    .map(value => new Date(value).getTime())
+    .filter(value => !Number.isNaN(value));
+
+  if (timestamps.length === 0) return new Date().toISOString();
+  return new Date(Math.max(...timestamps)).toISOString();
 };
 
 const stampAppState = (state, clientId, changeReason, revisionFloor = 0) => {
@@ -267,14 +338,20 @@ export default function App() {
   const [selectedMember, setSelectedMember] = useState(null);
   const clientIdRef = useRef(createId('client'));
   const lastRevisionRef = useRef(0);
-  const broadcastChannelRef = useRef(null);
   const appStateRef = useRef(null);
+  const loadInFlightRef = useRef(false);
+  const [authReady, setAuthReady] = useState(false);
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authChecking, setAuthChecking] = useState(false);
+  const [authError, setAuthError] = useState(null);
+  const [session, setSession] = useState(null);
+  const [ownerAccess, setOwnerAccess] = useState(false);
   const [syncStatus, setSyncStatus] = useState({
     live: false,
-    mode: 'local',
+    mode: 'supabase',
     localReady: false,
     lastSyncedAt: null,
-    message: 'Loading local workspace',
+    message: 'Connecting to Supabase',
     error: null
   });
 
@@ -302,6 +379,10 @@ export default function App() {
   const [formCurrency, setFormCurrency] = useState('\u20b9');
   const [formTaxRate, setFormTaxRate] = useState('18');
 
+  // Login Form
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+
   useEffect(() => {
     let mounted = true;
 
@@ -323,135 +404,301 @@ export default function App() {
     appStateRef.current = appState;
   }, [appState]);
 
-  // --- PERSISTENCE, MIGRATION & REAL-TIME PEER SYNC ---
-  const publishStateToPeers = (state) => {
-    if (Platform.OS !== 'web' || typeof window === 'undefined') return;
-    const payload = {
-      sourceId: clientIdRef.current,
-      sentAt: new Date().toISOString(),
-      state
-    };
+  // --- AUTH, SUPABASE PERSISTENCE & REALTIME SYNC ---
+  const raiseSupabaseError = (result) => {
+    if (result?.error) throw result.error;
+    return result;
+  };
 
-    try {
-      broadcastChannelRef.current?.postMessage(payload);
-    } catch (e) {
-      console.warn('BroadcastChannel sync failed', e);
+  const deleteRowsById = async (table, ids) => {
+    if (!ids.length) return;
+    raiseSupabaseError(await supabase.from(table).delete().in('id', ids));
+  };
+
+  const persistState = async (state, { previousState = appStateRef.current || createEmptyState(), message = 'Saved to Supabase' } = {}) => {
+    if (!supabase) throw new Error('Supabase is not configured.');
+
+    const normalized = normalizeAppState(state);
+    const previous = normalizeAppState(previousState);
+
+    await deleteRowsById('transactions', getDeletedIds(previous.transactions, normalized.transactions));
+    await deleteRowsById('members', getDeletedIds(previous.members, normalized.members));
+    await deleteRowsById('plans', getDeletedIds(previous.plans, normalized.plans));
+
+    raiseSupabaseError(await supabase.from('gym_settings').upsert(toSettingsRow(normalized.settings), { onConflict: 'id' }));
+
+    const planRows = normalized.plans.map(toPlanRow);
+    if (planRows.length) {
+      raiseSupabaseError(await supabase.from('plans').upsert(planRows, { onConflict: 'id' }));
     }
 
+    const memberRows = normalized.members.map(toMemberRow);
+    if (memberRows.length) {
+      raiseSupabaseError(await supabase.from('members').upsert(memberRows, { onConflict: 'id' }));
+    }
+
+    const transactionRows = normalized.transactions.map(transaction => toTransactionRow(transaction, normalized.members));
+    if (transactionRows.length) {
+      raiseSupabaseError(await supabase.from('transactions').upsert(transactionRows, { onConflict: 'id' }));
+    }
+
+    setSyncStatus({
+      live: true,
+      mode: 'supabase',
+      localReady: true,
+      lastSyncedAt: new Date().toISOString(),
+      message,
+      error: null
+    });
+  };
+
+  const saveState = async (nextState, changeReason = 'Workspace updated') => {
+    const previousState = appStateRef.current || createEmptyState();
+    const stampedState = stampAppState(nextState, clientIdRef.current, changeReason, lastRevisionRef.current);
+    lastRevisionRef.current = stampedState.meta.revision;
+    setAppState(stampedState);
+
     try {
-      window.localStorage.setItem(REALTIME_STORAGE_EVENT_KEY, JSON.stringify(payload));
+      await persistState(stampedState, { previousState, message: changeReason });
     } catch (e) {
-      console.warn('Storage event sync failed', e);
+      console.error('Failed to save Supabase state', e);
+      setAppState(previousState);
+      lastRevisionRef.current = Number(previousState.meta?.revision) || lastRevisionRef.current;
+      setSyncStatus(prev => ({
+        ...prev,
+        live: false,
+        error: e.message || 'Supabase save failed'
+      }));
+      showAlert('Save failed', e.message || 'Could not save changes to Supabase.');
     }
   };
 
-  const persistState = async (state, { broadcast = true, message = 'Saved locally' } = {}) => {
+  async function loadAppData(message = 'Workspace synced') {
+    if (!supabase || loadInFlightRef.current) return;
+    loadInFlightRef.current = true;
+
+    setSyncStatus(prev => ({
+      ...prev,
+      live: false,
+      mode: 'supabase',
+      message: 'Loading Supabase workspace',
+      error: null
+    }));
+
     try {
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-      if (broadcast) publishStateToPeers(state);
+      let settingsRow;
+      const settingsResult = await supabase
+        .from('gym_settings')
+        .select('*')
+        .eq('id', 1)
+        .maybeSingle();
+      raiseSupabaseError(settingsResult);
+      settingsRow = settingsResult.data;
+
+      if (!settingsRow) {
+        const createdSettings = await supabase
+          .from('gym_settings')
+          .upsert(toSettingsRow(DEFAULT_SETTINGS), { onConflict: 'id' })
+          .select('*')
+          .single();
+        raiseSupabaseError(createdSettings);
+        settingsRow = createdSettings.data;
+      }
+
+      const [plansResult, membersResult, transactionsResult] = await Promise.all([
+        supabase.from('plans').select('*').order('created_at', { ascending: true }),
+        supabase.from('members').select('*').order('created_at', { ascending: true }),
+        supabase.from('transactions').select('*').order('created_at', { ascending: false })
+      ]);
+
+      raiseSupabaseError(plansResult);
+      raiseSupabaseError(membersResult);
+      raiseSupabaseError(transactionsResult);
+
+      const revision = lastRevisionRef.current + 1;
+      const loadedState = normalizeAppState({
+        plans: (plansResult.data || []).map(fromPlanRow),
+        members: (membersResult.data || []).map(fromMemberRow),
+        transactions: (transactionsResult.data || []).map(fromTransactionRow),
+        settings: fromSettingsRow(settingsRow),
+        meta: {
+          dataVersion: APP_DATA_VERSION,
+          revision,
+          updatedAt: getLatestTimestamp(settingsRow, plansResult.data, membersResult.data, transactionsResult.data),
+          updatedBy: 'supabase',
+          changeReason: message
+        }
+      });
+
+      const overdueRefresh = refreshOverdueMembers(loadedState);
+      if (overdueRefresh.changed) {
+        lastRevisionRef.current = revision;
+        setAppState(loadedState);
+        await saveState(overdueRefresh.state, 'Overdue statuses refreshed');
+        return;
+      }
+
+      lastRevisionRef.current = revision;
+      setAppState(loadedState);
       setSyncStatus({
         live: true,
-        mode: 'local',
+        mode: 'supabase',
         localReady: true,
         lastSyncedAt: new Date().toISOString(),
         message,
         error: null
       });
     } catch (e) {
-      console.error('Failed to persist state', e);
+      console.error('Failed to load Supabase workspace', e);
       setSyncStatus(prev => ({
         ...prev,
         live: false,
-        error: 'Local save failed'
+        error: e.message || 'Supabase load failed'
       }));
+      setAuthError(e.message || 'Could not load Supabase workspace.');
+    } finally {
+      loadInFlightRef.current = false;
     }
-  };
-
-  const applyIncomingState = async (incomingState, message = 'Updated from another window') => {
-    const normalized = normalizeAppState(incomingState);
-    const incomingRevision = Number(normalized.meta?.revision) || 0;
-    if (incomingRevision <= lastRevisionRef.current) return;
-
-    lastRevisionRef.current = incomingRevision;
-    setAppState(normalized);
-    await persistState(normalized, { broadcast: false, message });
-  };
-
-  const saveState = async (nextState, changeReason = 'Workspace updated') => {
-    const stampedState = stampAppState(nextState, clientIdRef.current, changeReason, lastRevisionRef.current);
-    lastRevisionRef.current = stampedState.meta.revision;
-    setAppState(stampedState);
-    await persistState(stampedState, { broadcast: true, message: changeReason });
-  };
+  }
 
   useEffect(() => {
     let mounted = true;
 
-    async function loadData() {
-      try {
-        const saved = await AsyncStorage.getItem(STORAGE_KEY);
-        const legacySaved = saved ? null : await AsyncStorage.getItem(LEGACY_STORAGE_KEY);
-        const parsed = saved || legacySaved ? JSON.parse(saved || legacySaved) : createStarterState();
-        const normalized = normalizeAppState(parsed);
-        const overdueRefresh = refreshOverdueMembers(normalized);
-        const nextState = overdueRefresh.changed
-          ? stampAppState(overdueRefresh.state, clientIdRef.current, 'Overdue statuses refreshed', normalized.meta.revision)
-          : normalized;
-
-        if (!mounted) return;
-        lastRevisionRef.current = Number(nextState.meta?.revision) || 1;
-        setAppState(nextState);
-        await persistState(nextState, {
-          broadcast: overdueRefresh.changed,
-          message: legacySaved ? 'Migrated saved workspace' : 'Workspace ready'
-        });
-      } catch (e) {
-        console.error('Failed to load state', e);
-        const fallbackState = createStarterState();
-        if (!mounted) return;
-        lastRevisionRef.current = fallbackState.meta.revision;
-        setAppState(fallbackState);
-        await persistState(fallbackState, { broadcast: false, message: 'Starter workspace ready' });
-      }
+    if (!isSupabaseConfigured || !supabase) {
+      setAuthError(supabaseConfigError || 'Supabase is not configured.');
+      setAuthReady(true);
+      return () => {
+        mounted = false;
+      };
     }
 
-    loadData();
+    supabase.auth.getSession()
+      .then(({ data, error }) => {
+        if (!mounted) return;
+        if (error) setAuthError(error.message);
+        setSession(data?.session || null);
+      })
+      .catch(e => {
+        if (!mounted) return;
+        setAuthError(e.message || 'Could not read Supabase session.');
+      })
+      .finally(() => {
+        if (mounted) setAuthReady(true);
+      });
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      if (!mounted) return;
+      setSession(prevSession => {
+        if (prevSession?.user?.id !== nextSession?.user?.id) {
+          setOwnerAccess(false);
+          setAppState(null);
+        }
+        return nextSession;
+      });
+      if (!nextSession) {
+        setOwnerAccess(false);
+        setAppState(null);
+        setSyncStatus(prev => ({
+          ...prev,
+          live: false,
+          localReady: false,
+          message: 'Signed out',
+          error: null
+        }));
+      }
+    });
+
     return () => {
       mounted = false;
+      listener?.subscription?.unsubscribe?.();
     };
   }, []);
 
   useEffect(() => {
-    if (Platform.OS !== 'web' || typeof window === 'undefined') return undefined;
+    if (!authReady || !session?.user || !supabase) return undefined;
 
-    const handlePayload = (payload, message) => {
-      if (!payload || payload.sourceId === clientIdRef.current || !payload.state) return;
-      applyIncomingState(payload.state, message);
-    };
+    let mounted = true;
 
-    const handleStorage = (event) => {
-      if (event.key !== REALTIME_STORAGE_EVENT_KEY || !event.newValue) return;
+    async function verifyOwnerAccess() {
+      setAuthChecking(true);
+      setAuthError(null);
+      setSyncStatus(prev => ({
+        ...prev,
+        live: false,
+        message: 'Checking owner access',
+        error: null
+      }));
+
       try {
-        handlePayload(JSON.parse(event.newValue), 'Updated from another browser tab');
-      } catch (e) {
-        console.warn('Could not parse realtime storage payload', e);
-      }
-    };
+        const result = await supabase
+          .from('app_admins')
+          .select('user_id, role')
+          .eq('user_id', session.user.id)
+          .eq('role', 'owner')
+          .maybeSingle();
+        raiseSupabaseError(result);
 
-    if ('BroadcastChannel' in window) {
-      broadcastChannelRef.current = new BroadcastChannel(REALTIME_CHANNEL_NAME);
-      broadcastChannelRef.current.onmessage = (event) => {
-        handlePayload(event.data, 'Updated from live browser channel');
-      };
+        if (!result.data) {
+          throw new Error('This account is not allowed to manage K1 Gym.');
+        }
+
+        if (!mounted) return;
+        setOwnerAccess(true);
+        await loadAppData('Workspace synced');
+      } catch (e) {
+        console.error('Owner access check failed', e);
+        if (!mounted) return;
+        setOwnerAccess(false);
+        setAppState(null);
+        setAuthError(e.message || 'Owner access check failed.');
+        await supabase.auth.signOut();
+      } finally {
+        if (mounted) setAuthChecking(false);
+      }
     }
 
-    window.addEventListener('storage', handleStorage);
+    verifyOwnerAccess();
+
     return () => {
-      window.removeEventListener('storage', handleStorage);
-      broadcastChannelRef.current?.close?.();
-      broadcastChannelRef.current = null;
+      mounted = false;
     };
-  }, []);
+  }, [authReady, session?.user?.id]);
+
+  useEffect(() => {
+    if (!ownerAccess || !supabase) return undefined;
+
+    const handleRealtimeChange = () => {
+      loadAppData('Updated from Supabase realtime');
+    };
+
+    const channel = supabase
+      .channel('k1gym-db-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'gym_settings' }, handleRealtimeChange)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'plans' }, handleRealtimeChange)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'members' }, handleRealtimeChange)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, handleRealtimeChange)
+      .subscribe(status => {
+        if (status === 'SUBSCRIBED') {
+          setSyncStatus(prev => ({
+            ...prev,
+            live: true,
+            message: 'Supabase realtime connected',
+            error: null
+          }));
+        }
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          setSyncStatus(prev => ({
+            ...prev,
+            live: false,
+            error: 'Supabase realtime reconnecting'
+          }));
+        }
+      });
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [ownerAccess, session?.user?.id]);
 
   useEffect(() => {
     if (!appState) return undefined;
@@ -502,26 +749,26 @@ export default function App() {
 
   const handleResetDatabase = () => {
     const runReset = () => {
-      const defaultState = createStarterState();
-      saveState(defaultState, 'Workspace restored to starter data');
+      const defaultState = createEmptyState();
+      saveState(defaultState, 'Cloud workspace cleared');
       if (Platform.OS === 'web') {
-        alert("Workspace restored to starter data.");
+        alert("Cloud workspace cleared. Default gym settings were kept.");
       } else {
-        Alert.alert("Reset Success", "Workspace restored to starter data.");
+        Alert.alert("Reset Success", "Cloud workspace cleared. Default gym settings were kept.");
       }
     };
 
     if (Platform.OS === 'web') {
-      if (confirm("WARNING: This will wipe all local workspace changes and restore the starter gym dataset. Continue?")) {
+      if (confirm("WARNING: This will delete all cloud members, plans, and transactions for this gym. Continue?")) {
         runReset();
       }
     } else {
       Alert.alert(
-        "Restore defaults",
-        "WARNING: This will wipe all local workspace changes and restore the starter gym dataset. Continue?",
+        "Clear workspace",
+        "WARNING: This will delete all cloud members, plans, and transactions for this gym. Continue?",
         [
           { text: "Cancel", style: "cancel" },
-          { text: "Restore", style: "destructive", onPress: runReset }
+          { text: "Clear", style: "destructive", onPress: runReset }
         ]
       );
     }
@@ -625,6 +872,46 @@ export default function App() {
     }
   };
 
+  const handleSignIn = async () => {
+    const email = authEmail.trim().toLowerCase();
+    const password = authPassword;
+
+    if (!supabase) {
+      setAuthError(supabaseConfigError || 'Supabase is not configured.');
+      return;
+    }
+
+    if (!email || !password) {
+      setAuthError('Enter the owner email and password.');
+      return;
+    }
+
+    setAuthLoading(true);
+    setAuthError(null);
+
+    try {
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      setAuthPassword('');
+    } catch (e) {
+      setAuthError(e.message || 'Could not sign in.');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleSignOut = async () => {
+    setAuthLoading(true);
+    try {
+      await supabase?.auth.signOut();
+    } finally {
+      setAuthLoading(false);
+      setOwnerAccess(false);
+      setSession(null);
+      setAppState(null);
+    }
+  };
+
   const handleToggleTheme = () => {
     const nextThemeMode = isDarkMode ? 'light' : 'dark';
     setThemeMode(nextThemeMode);
@@ -709,6 +996,12 @@ export default function App() {
   };
 
   const handleOpenAddMember = () => {
+    if (!appState?.plans?.length) {
+      showAlert('Plan required', 'Create a membership plan before adding members.');
+      setCurrentView('plans');
+      return;
+    }
+
     setEditingMember(null);
     setFormMemberName('');
     setFormMemberPhone('');
@@ -975,11 +1268,129 @@ export default function App() {
     return `${symbol}${val}`;
   };
 
+  const renderLoginPage = () => {
+    const signInDisabled = authLoading || authChecking || !isSupabaseConfigured;
+
+    return (
+      <SafeAreaView style={styles.authContainer}>
+        <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
+        <View style={styles.authShell}>
+          <View style={styles.authBrand}>
+            <View style={styles.authBrandMark}>
+              <MaterialIcons name="fitness-center" size={30} color={theme.onAccent} />
+            </View>
+            <View>
+              <Text style={styles.authTitle}>K1 Gym Owner Login</Text>
+              <Text style={styles.authSubtitle}>Sign in to manage the shared workspace.</Text>
+            </View>
+          </View>
+
+          <View style={styles.authPanel}>
+            <View style={styles.formGroup}>
+              <Text style={styles.formLabel}>Owner Email</Text>
+              <TextInput
+                style={styles.formInput}
+                value={authEmail}
+                onChangeText={setAuthEmail}
+                placeholder="owner@example.com"
+                placeholderTextColor={theme.placeholder}
+                autoCapitalize="none"
+                keyboardType="email-address"
+                returnKeyType="next"
+                editable={!authLoading}
+              />
+            </View>
+
+            <View style={styles.formGroup}>
+              <Text style={styles.formLabel}>Password</Text>
+              <TextInput
+                style={styles.formInput}
+                value={authPassword}
+                onChangeText={setAuthPassword}
+                placeholder="Password"
+                placeholderTextColor={theme.placeholder}
+                secureTextEntry
+                autoCapitalize="none"
+                returnKeyType="go"
+                onSubmitEditing={handleSignIn}
+                editable={!authLoading}
+              />
+            </View>
+
+            {authError ? (
+              <View style={styles.authErrorBox}>
+                <MaterialIcons name="error-outline" size={18} color={theme.danger} />
+                <Text style={styles.authErrorText}>{authError}</Text>
+              </View>
+            ) : null}
+
+            <TouchableOpacity
+              style={[styles.primaryBtn, styles.authSubmitBtn, signInDisabled && styles.disabledBtn]}
+              onPress={handleSignIn}
+              disabled={signInDisabled}
+            >
+              <MaterialIcons name="login" size={18} color={theme.onAccent} />
+              <Text style={styles.primaryBtnText}>
+                {authLoading || authChecking ? 'Signing in...' : 'Sign in'}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.authThemeBtn} onPress={handleToggleTheme}>
+              <MaterialIcons name={isDarkMode ? 'light-mode' : 'dark-mode'} size={18} color={theme.themeIcon} />
+              <Text style={styles.authThemeText}>{isDarkMode ? 'Light mode' : 'Dark mode'}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </SafeAreaView>
+    );
+  };
+
+  const renderWorkspaceError = () => (
+    <SafeAreaView style={styles.authContainer}>
+      <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
+      <View style={styles.authShell}>
+        <View style={styles.authPanel}>
+          <View style={styles.authErrorBox}>
+            <MaterialIcons name="cloud-off" size={20} color={theme.danger} />
+            <Text style={styles.authErrorText}>
+              {syncStatus.error || authError || 'Could not load the Supabase workspace.'}
+            </Text>
+          </View>
+          <TouchableOpacity style={[styles.primaryBtn, styles.authSubmitBtn]} onPress={() => loadAppData('Workspace synced')}>
+            <MaterialIcons name="refresh" size={18} color={theme.onAccent} />
+            <Text style={styles.primaryBtnText}>Retry</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.authThemeBtn} onPress={handleSignOut}>
+            <MaterialIcons name="logout" size={18} color={theme.danger} />
+            <Text style={[styles.authThemeText, { color: theme.danger }]}>Sign out</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </SafeAreaView>
+  );
+
+  if (!authReady || authChecking) {
+    return (
+      <View style={styles.loadingContainer}>
+        <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
+        <Text style={styles.loadingText}>Checking Owner Access...</Text>
+      </View>
+    );
+  }
+
+  if (!session?.user || !ownerAccess) {
+    return renderLoginPage();
+  }
+
+  if (!appState && syncStatus.error) {
+    return renderWorkspaceError();
+  }
+
   if (!appState) {
     return (
       <View style={styles.loadingContainer}>
         <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
-        <Text style={styles.loadingText}>Loading Gym Console...</Text>
+        <Text style={styles.loadingText}>Loading Supabase Workspace...</Text>
       </View>
     );
   }
@@ -989,7 +1400,7 @@ export default function App() {
     const lastSavedAt = syncStatus.lastSyncedAt || appState.meta?.updatedAt;
     const statusLabel = syncStatus.error
       ? 'Sync issue'
-      : 'Local sync';
+      : 'Supabase sync';
     const statusMeta = syncStatus.error || `${syncStatus.message} - ${formatRelativeSyncTime(lastSavedAt)}`;
 
     return (
@@ -1069,6 +1480,10 @@ export default function App() {
             </TouchableOpacity>
           ))}
         </View>
+        <TouchableOpacity style={styles.signOutBtn} onPress={handleSignOut} disabled={authLoading}>
+          <MaterialIcons name="logout" size={20} color={theme.danger} style={styles.navBtnIcon} />
+          <Text style={styles.signOutBtnText}>Sign Out</Text>
+        </TouchableOpacity>
       </View>
     );
   };
@@ -1083,6 +1498,15 @@ export default function App() {
         <View style={styles.mobileHeaderActions}>
           {renderThemeToggle(true)}
           {renderSyncStatus(true)}
+          <TouchableOpacity
+            style={styles.mobileIconBtn}
+            onPress={handleSignOut}
+            disabled={authLoading}
+            accessibilityRole="button"
+            accessibilityLabel="Sign out"
+          >
+            <MaterialIcons name="logout" size={20} color={theme.danger} />
+          </TouchableOpacity>
           <View style={[styles.avatarCircle, { width: 32, height: 32, backgroundColor: theme.primary }]}>
             <Text style={[styles.avatarText, { fontSize: 14 }]}>{appState.settings.ownerName?.[0]?.toUpperCase()}</Text>
           </View>
@@ -1527,7 +1951,7 @@ export default function App() {
             <View style={styles.syncInfoItem}>
               <Text style={styles.bodyItemLabel}>Mode</Text>
               <Text style={styles.bodyItemVal}>
-                {syncStatus.localReady ? 'Local browser sync' : 'Local sync pending'}
+                {syncStatus.localReady ? 'Supabase cloud sync' : 'Supabase sync pending'}
               </Text>
             </View>
             <View style={styles.syncInfoItem}>
@@ -1546,11 +1970,11 @@ export default function App() {
         <View style={[styles.settingsCard, styles.dangerCard]}>
           <Text style={[styles.settingsCardTitle, { color: theme.danger }]}>Danger Zone</Text>
           <Text style={styles.dangerDesc}>
-            Resetting your workspace wipes all custom additions and restores the starter gym dataset.
+            Clearing your workspace deletes cloud members, plans, and transaction history for this gym.
           </Text>
           <TouchableOpacity style={styles.dangerActionBtn} onPress={handleResetDatabase}>
-            <MaterialIcons name="restore" size={20} color={theme.onAccent} />
-            <Text style={styles.dangerActionBtnText}>Restore Starter Data</Text>
+            <MaterialIcons name="delete-sweep" size={20} color={theme.onAccent} />
+            <Text style={styles.dangerActionBtnText}>Clear Cloud Workspace</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -2018,6 +2442,94 @@ const createStyles = (width, theme) => StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
+  authContainer: {
+    flex: 1,
+    backgroundColor: theme.background,
+  },
+  authShell: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: Platform.OS === 'web' && width < 600 ? 18 : 24,
+  },
+  authBrand: {
+    width: '100%',
+    maxWidth: 420,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 18,
+  },
+  authBrandMark: {
+    width: 54,
+    height: 54,
+    borderRadius: 8,
+    backgroundColor: theme.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 14,
+  },
+  authTitle: {
+    color: theme.text,
+    fontSize: Platform.OS === 'web' && width < 380 ? 22 : 26,
+    fontWeight: '900',
+  },
+  authSubtitle: {
+    color: theme.muted,
+    fontSize: 13,
+    marginTop: 4,
+  },
+  authPanel: {
+    width: '100%',
+    maxWidth: 420,
+    backgroundColor: theme.surface,
+    borderWidth: 1,
+    borderColor: theme.border,
+    borderRadius: 8,
+    padding: Platform.OS === 'web' && width < 380 ? 16 : 22,
+    shadowColor: theme.shadow,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.22,
+    shadowRadius: 18,
+    elevation: 8,
+  },
+  authErrorBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: theme.dangerSoft,
+    borderWidth: 1,
+    borderColor: theme.dangerBorder,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 14,
+  },
+  authErrorText: {
+    color: theme.danger,
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 17,
+    marginLeft: 8,
+    flex: 1,
+  },
+  authSubmitBtn: {
+    width: '100%',
+    marginTop: 2,
+  },
+  authThemeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 14,
+    paddingVertical: 8,
+  },
+  authThemeText: {
+    color: theme.muted,
+    fontSize: 12,
+    fontWeight: '700',
+    marginLeft: 8,
+  },
+  disabledBtn: {
+    opacity: 0.55,
+  },
   mainLayout: {
     flex: 1,
     flexDirection: 'row',
@@ -2196,6 +2708,22 @@ const createStyles = (width, theme) => StyleSheet.create({
     color: theme.primary,
     fontWeight: '700',
   },
+  signOutBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: theme.dangerSoft,
+    borderWidth: 1,
+    borderColor: theme.dangerBorder,
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    marginTop: 14,
+  },
+  signOutBtnText: {
+    color: theme.danger,
+    fontSize: 14,
+    fontWeight: '800',
+  },
 
   // Mobile Topbar header
   mobileHeader: {
@@ -2227,6 +2755,16 @@ const createStyles = (width, theme) => StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     flexShrink: 0,
+  },
+  mobileIconBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    backgroundColor: theme.dangerSoft,
+    borderWidth: 1,
+    borderColor: theme.dangerBorder,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 
   // Mobile navigation bottom bar
