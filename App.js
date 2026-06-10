@@ -1,5 +1,9 @@
 import 'react-native-get-random-values';
+import * as SplashScreen from 'expo-splash-screen';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+
+// Keep the splash screen visible while loading the Supabase workspace
+SplashScreen.preventAutoHideAsync().catch(() => {});
 import {
   View,
   Text,
@@ -746,6 +750,14 @@ export default function App() {
       setSelectedMember(null);
     }
   }, [appState, selectedMember?.id]);
+
+  useEffect(() => {
+    if (authReady && (appState || syncStatus.error || !session?.user)) {
+      SplashScreen.hideAsync().catch(e => {
+        console.warn('Failed to hide splash screen', e);
+      });
+    }
+  }, [authReady, appState, syncStatus.error, session]);
 
   const handleResetDatabase = () => {
     const runReset = () => {
